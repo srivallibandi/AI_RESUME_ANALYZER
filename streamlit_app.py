@@ -27,8 +27,6 @@ conn.commit()
 # -------------------------------
 # Font handling
 # -------------------------------
-# Build an absolute path to the font file based on this script's location,
-# so it works no matter what directory Streamlit is launched from.
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FONT_PATH = os.path.join(BASE_DIR, "DejaVuSans.ttf")
 UNICODE_FONT_AVAILABLE = os.path.isfile(FONT_PATH)
@@ -85,19 +83,23 @@ def export_pdf_report(name, job_role, ats_score, match_score, recommendations, i
     pdf.add_page()
 
     if UNICODE_FONT_AVAILABLE:
-        # Unicode font found - supports any special characters (e.g. rupee symbol, accents)
         pdf.add_font("DejaVu", "", FONT_PATH, uni=True)
         pdf.set_font("DejaVu", size=12)
     else:
-        # Fall back to a built-in core font so the app doesn't crash.
-        # Core fonts (Arial/Helvetica) only support latin-1, so make sure
-        # predict_salary() etc. don't contain characters like ₹.
         pdf.set_font("Arial", size=12)
 
+    effective_width = pdf.w - pdf.l_margin - pdf.r_margin
+
     pdf.cell(200, 10, f"Resume Analysis Report for {name}", ln=True, align="C")
-    pdf.multi_cell(0, 10, f"Job Role: {job_role}\nATS Score: {ats_score}%\nMatch Score: {match_score}%\n\nRecommendations:\n" + "\n".join(recommendations))
-    pdf.multi_cell(0, 10, "\nInterview Questions:\n" + "\n".join(interview_questions))
-    pdf.multi_cell(0, 10, f"\nSalary Prediction: {salary_prediction}")
+
+    pdf.set_x(pdf.l_margin)
+    pdf.multi_cell(effective_width, 10, f"Job Role: {job_role}\nATS Score: {ats_score}%\nMatch Score: {match_score}%\n\nRecommendations:\n" + "\n".join(recommendations))
+
+    pdf.set_x(pdf.l_margin)
+    pdf.multi_cell(effective_width, 10, "\nInterview Questions:\n" + "\n".join(interview_questions))
+
+    pdf.set_x(pdf.l_margin)
+    pdf.multi_cell(effective_width, 10, f"\nSalary Prediction: {salary_prediction}")
     pdf.output("resume_report.pdf")
 
 def export_word_report(name, job_role, ats_score, match_score, recommendations, interview_questions, salary_prediction):
@@ -126,7 +128,6 @@ job_role = st.selectbox("Select Job Role", ["Data Analyst", "Software Engineer",
 uploaded_resume = st.file_uploader("Upload Resume (PDF/DOCX)", type=["pdf", "docx"])
 job_description = st.text_area("Paste Job Description")
 
-# Default JD fallback
 default_jds = {
     "Data Analyst": "Looking for a Data Analyst with skills in SQL, Python, Tableau, and statistics.",
     "Software Engineer": "Seeking a Software Engineer with experience in Java, C++, system design, and algorithms.",
@@ -137,48 +138,39 @@ if not job_description.strip():
 
 if st.button("Analyze Resume"):
     if uploaded_resume and name:
-        # Extract resume text
         if uploaded_resume.type == "application/pdf":
             resume_text = extract_text_from_pdf(uploaded_resume)
         else:
             resume_text = extract_text_from_docx(uploaded_resume)
 
-        # ATS Score
         ats_score = calculate_ats_score(resume_text, job_description)
-        match_score = ats_score  # simplified
+        match_score = ats_score
 
-        # Recommendations, Interview Qs, Salary
         recommendations = generate_recommendations(job_role)
         interview_questions = generate_interview_questions(job_role)
         salary_prediction = predict_salary(job_role)
 
-        # Save to DB
         c.execute("INSERT INTO resumes (name, job_role, ats_score, match_score, recommendations, interview_questions, salary_prediction) VALUES (?, ?, ?, ?, ?, ?, ?)",
                   (name, job_role, ats_score, match_score, ", ".join(recommendations), ", ".join(interview_questions), salary_prediction))
         conn.commit()
 
-        # Dashboard
         st.subheader("📊 Analysis Results")
         st.write(f"**ATS Score:** {ats_score}%")
         st.write(f"**Match Score:** {match_score}%")
         st.write(f"**Salary Prediction:** {salary_prediction}")
 
-        # Charts
         fig, ax = plt.subplots()
         ax.bar(["ATS Score", "Match Score"], [ats_score, match_score], color=["blue", "green"])
         st.pyplot(fig)
 
-        # Recommendations
         st.subheader("✅ Recommendations")
         for rec in recommendations:
             st.write("- " + rec)
 
-        # Interview Questions
         st.subheader("🎤 Interview Questions")
         for q in interview_questions:
             st.write("- " + q)
 
-        # Export Reports with Download Buttons
         export_pdf_report(name, job_role, ats_score, match_score, recommendations, interview_questions, salary_prediction)
         with open("resume_report.pdf", "rb") as f:
             st.download_button("📥 Download PDF Report", f, file_name="resume_report.pdf")
