@@ -1,5 +1,5 @@
 streamlit
 pdfplumber
 python-docx
-fpdf2
+fpdf2==2.7.9
 matplotlib
